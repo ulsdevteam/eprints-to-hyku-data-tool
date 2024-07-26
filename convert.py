@@ -6,9 +6,10 @@ def save_to_file(json_object, filename, file_encoding='utf-8'):
 	output_file.close()
 
 # class to parse incoming JSON and output JSON
-def parse_object():
-	return
+def parse_object(json_object):
+	return json_object
 
+# Setting up argument parsing
 def parse_arguments():
 	parser = argparse.ArgumentParser(description='Parse some JSON.')
 	parser.add_argument('infile', metavar='infile', type=str, help='the path to a json-formatted file that will be parsed.')
@@ -34,20 +35,34 @@ def main():
 
 	#[print(i) for i in directories]
 
-	file_index = 0
 
-#	print("There are "+str(len(data))+" entries in this JSON file.")
+	file_index = 0
+	local_index = 1
 	# get the padding size (so we can zero-pad our filenames)
 	pad_size = zero_pad_size(len(data), args.max_size)
+	# initializing object with empty list
+	json_output = []
+	new_content = {}
+
+	#with open(args.outfile+str(file_index).rjust(pad_size, '0')+'.json', mode='w', encoding='latin-1') as output_file:
+	#	json.dump([], output_file)
 
 	for index,content in enumerate(data):
+		# increment our count of items for this file
+		local_index += 1
+		# parse the object as needed
+		new_content = parse_object(content)
+		# adding our content to the list
+		json_output.append(new_content)
 		#print(json.dumps(content, indent=4))
-		#save to file
-		save_to_file(content, args.outfile+str(file_index).rjust(pad_size, '0'+'.json')
 
-		if index >= args.max_size:
+		if local_index >= args.max_size:
+			# Write to an output file. We're using the file_index to build the filename here.
+			save_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.json')
+			# reset for our next file
+			json_output = []
 			file_index += 1
-
+			local_index = 0
 
 	f.close()
 

@@ -11,18 +11,25 @@ def save_csv_to_file(json_object, filename, fieldnames, file_encoding='utf-8'):
 
 		writer.writeheader()
 		for row in json_object:
-			for key, value in row.items():
-				print(str(key)+"->"+str(value)+" ("+str(type(value))+")")
+			#for key, value in row.items():
+				#print(str(key)+"->"+str(value)+" ("+str(type(value))+")")
 			writer.writerow(row)
 			#print(json.dumps(row, indent=4))
 	output_file.close()
 
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
+	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
 		if type(value) is list:
 			if len(value) == 1:
 				json_object[key] = value[0]
+	# moving keys
+	if 'degree' in json_object.keys():
+		json_object['degree_name'] = json_object.pop('degree')
+	if 'level' in json_object.keys():
+		json_object['degree_level'] = json_object.pop('level')
+
 	return json_object
 
 # Setting up argument parsing

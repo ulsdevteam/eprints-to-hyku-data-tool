@@ -1,12 +1,28 @@
-import argparse, json, math, os
+import argparse, csv, json, math, os
 
-def save_to_file(json_object, filename, file_encoding='utf-8'):
+def save_json_to_file(json_object, filename, file_encoding='utf-8'):
 	with open(filename, 'w', encoding=file_encoding) as output_file:
 		json.dump(json_object, output_file, ensure_ascii=False, indent=4)
 	output_file.close()
 
+def save_csv_to_file(json_object, filename, fieldnames, file_encoding='utf-8'):
+	with open(filename, 'w', encoding=file_encoding, newline='\r') as output_file:
+		writer = csv.DictWriter(output_file, fieldnames=fieldnames, dialect="excel")
+
+		writer.writeheader()
+		for row in json_object:
+			for key, value in row.items():
+				print(str(key)+"->"+str(value)+" ("+str(type(value))+")")
+			writer.writerow(row)
+			#print(json.dumps(row, indent=4))
+	output_file.close()
+
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
+	for key,value in json_object.items():
+		if type(value) is list:
+			if len(value) == 1:
+				json_object[key] = value[0]
 	return json_object
 
 # Setting up argument parsing
@@ -35,7 +51,6 @@ def main():
 
 	#[print(i) for i in directories]
 
-
 	file_index = 0
 	local_index = 1
 	# get the padding size (so we can zero-pad our filenames)
@@ -43,11 +58,12 @@ def main():
 	# initializing object with empty list
 	json_output = []
 	new_content = {}
+	fieldnames = {}
 
 	#with open(args.outfile+str(file_index).rjust(pad_size, '0')+'.json', mode='w', encoding='latin-1') as output_file:
 	#	json.dump([], output_file)
 
-	for index,content in enumerate(data):
+	for content in data:
 		# increment our count of items for this file
 		local_index += 1
 		# parse the object as needed
@@ -56,13 +72,30 @@ def main():
 		json_output.append(new_content)
 		#print(json.dumps(content, indent=4))
 
+		# generate field names
+		for fieldname in list(content.keys()):
+			if(fieldname not in fieldnames):
+				fieldnames[fieldname] = fieldname
+
 		if local_index >= args.max_size:
 			# Write to an output file. We're using the file_index to build the filename here.
-			save_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.json')
+			save_json_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.json')
+			save_csv_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.csv', fieldnames)
+			#print(json.dumps(json_output, indent=4))
 			# reset for our next file
 			json_output = []
 			file_index += 1
 			local_index = 0
+
+	if local_index > 0:
+		# Write to an output file. We're using the file_index to build the filename here.
+		save_json_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.json')
+		save_csv_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.csv', fieldnames)
+		#print(json.dumps(json_output, indent=4))
+		# reset for our next file
+		json_output = []
+		file_index += 1
+		local_index = 0
 
 	f.close()
 

@@ -17,6 +17,22 @@ def save_csv_to_file(json_object, filename, fieldnames, file_encoding='utf-8'):
 			#print(json.dumps(row, indent=4))
 	output_file.close()
 
+# convert lists to pipe-delimited strings for CSV import
+# note that we shouldn't need to add our own quotes
+def stringify_list(delimiter, list, escape_character="\\"):
+	new_string = ""
+	for value in list:
+		# Hunt for delimiters in the data that we need to escape
+		if delimiter in value:
+			value = value.replace(delimiter, escape_character+delimiter)
+
+		# Don't want to start with your delimiter
+		if not new_string:
+			new_string = str(value)
+		else:
+			new_string = new_string + delimiter + str(value)
+	return new_string
+
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
 	# quick and dirty fix for the JSON import pulling everything into a list
@@ -24,11 +40,19 @@ def parse_object(json_object):
 		if type(value) is list:
 			if len(value) == 1:
 				json_object[key] = value[0]
+			elif len(value) > 1:
+				json_object[key] = stringify_list("|", value)
 	# moving keys
 	if 'degree' in json_object.keys():
 		json_object['degree_name'] = json_object.pop('degree')
 	if 'level' in json_object.keys():
 		json_object['degree_level'] = json_object.pop('level')
+	# required keys
+	if 'degree_name' not in json_object.keys():
+		json_object['degree_name'] = "Unknown"
+	if 'degree_level' not in json_object.keys():
+		json_object['degree_level'] = "Unknown"
+
 
 	return json_object
 

@@ -1,4 +1,19 @@
-import argparse, csv, json, math, os
+import argparse, csv, datetime, json, math, os
+from pytz import timezone
+
+LOGFILE_DEFAULT = "logs/default.log"
+LOGFILE_DEFAULT_ERROR = "logs/error.log"
+LOGFILE_DEFAULT_DETAILS = "logs/details.log"
+LOGFILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+LOGFILE_MISSING_DEGREE_NAME = "logs/missing_degree_name.log"
+LOGFILE_MISSING_DEGREE_LEVEL = "logs/missing_degree_level.log"
+
+def log_activity_to_file(logstring="Unknown action.", filename=LOGFILE_DEFAULT):
+	eastern = timezone('US/Eastern')
+	local_time = datetime.datetime.now(eastern)
+	with open(filename, 'a') as output_file:
+		output_file.write(local_time.strftime(LOGFILE_DATE_FORMAT)+": "+logstring+"\n")
+	output_file.close()
 
 def save_json_to_file(json_object, filename, file_encoding='utf-8'):
 	with open(filename, 'w', encoding=file_encoding) as output_file:
@@ -35,6 +50,7 @@ def stringify_list(delimiter, list, escape_character="\\"):
 
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
+	with_errors = False
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
 		if type(value) is list:
@@ -50,11 +66,21 @@ def parse_object(json_object):
 	# required keys
 	if 'degree_name' not in json_object.keys():
 		json_object['degree_name'] = "Unknown"
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_ERROR)
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_DETAILS)
+		with_errors = True
 	if 'degree_level' not in json_object.keys():
 		json_object['degree_level'] = "Unknown"
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_ERROR)
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_DETAILS)
+		with_errors = True
 
+	if with_errors:
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" was converted, with errors.", LOGFILE_DEFAULT_DETAILS)
+	else:
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" was converted.", LOGFILE_DEFAULT_DETAILS)
 
-	return json_object
+	return [json_object,with_errors]
 
 # Setting up argument parsing
 def parse_arguments():
@@ -73,6 +99,11 @@ def zero_pad_size(count, max_size):
 def main():
 	args = parse_arguments()
 
+	# Clear out the detailed log from the last run.
+	open(LOGFILE_DEFAULT_DETAILS, 'w').close()
+	log_activity_to_file("Conversion started.")
+	log_activity_to_file("Conversion started.", LOGFILE_DEFAULT_DETAILS)
+
 	try:
 	#	directories = os.listdir("./import")
 		with open(args.infile, 'r', encoding='latin-1') as f:
@@ -90,6 +121,8 @@ def main():
 	json_output = []
 	new_content = {}
 	fieldnames = {}
+	files_with_errors = 0
+	files_without_errors = 0
 
 	#with open(args.outfile+str(file_index).rjust(pad_size, '0')+'.json', mode='w', encoding='latin-1') as output_file:
 	#	json.dump([], output_file)
@@ -98,7 +131,13 @@ def main():
 		# increment our count of items for this file
 		local_index += 1
 		# parse the object as needed
-		new_content = parse_object(content)
+		[new_content,with_errors] = parse_object(content)
+
+		if with_errors:
+			files_with_errors += 1
+		else:
+			files_without_errors += 1
+
 		# adding our content to the list
 		json_output.append(new_content)
 		#print(json.dumps(content, indent=4))
@@ -114,6 +153,7 @@ def main():
 			save_csv_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.csv', fieldnames)
 			#print(json.dumps(json_output, indent=4))
 			# reset for our next file
+			log_activity_to_file("Writing objects to files starting with "+args.outfile+str(file_index).rjust(pad_size, '0'), LOGFILE_DEFAULT_DETAILS)
 			json_output = []
 			file_index += 1
 			local_index = 0
@@ -124,12 +164,14 @@ def main():
 		save_csv_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.csv', fieldnames)
 		#print(json.dumps(json_output, indent=4))
 		# reset for our next file
+		log_activity_to_file("Writing objects to files starting with "+args.outfile+str(file_index).rjust(pad_size, '0'), LOGFILE_DEFAULT_DETAILS)
 		json_output = []
 		file_index += 1
 		local_index = 0
 
 	f.close()
 
+	log_activity_to_file("Conversion complete. "+str(files_without_errors)+" objects processed without errors. "+str(files_with_errors)+" objects processed with errors.", LOGFILE_DEFAULT_DETAILS)
 	#with open('output.json', 'w', encoding='latin-1') as outputFile:
 	#	json.dump(data, outputFile, ensure_ascii=False, indent=4)
 	#outputFile.close()

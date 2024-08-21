@@ -1,10 +1,15 @@
-import argparse, csv, datetime, json, math, os
+import argparse, csv, datetime, json, math, os, sys
 from pytz import timezone
 from pathlib import Path
+
+# Well, this started out pretty simple and now I look at it and want to refactor it.
+# Apologies for the lack of class structure!
 
 DIRECTORY_SEPARATOR = "/"
 INPUT_DIRECTORY = "import"
 OUTPUT_DIRECTORY = "output"
+DEFINITIONS_DIRECTORY = "definitions"
+CATEGORY_FILENAME = "categories.json"
 
 BATCH_DATE_FORMAT = "%Y-%m-%d %H-%M-%S"
 EASTERN_TIMEZONE = timezone('US/Eastern')
@@ -19,6 +24,8 @@ LOGFILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOGFILE_MISSING_DEGREE_NAME = "missing_degree_name.log"
 LOGFILE_MISSING_DEGREE_LEVEL = "missing_degree_level.log"
 LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
+
+categories = {}
 
 def error_to_terminal(error, error_code=1):
 	print("\nFatal error!\n\n"+error+"\n\n")
@@ -91,7 +98,11 @@ def stringify_list(delimiter, list, escape_character="\\"):
 
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
+	# regrets
+	global categories
+
 	with_errors = False
+	parent_tree = []
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
 		if type(value) is list:
@@ -104,6 +115,15 @@ def parse_object(json_object):
 		json_object['degree_name'] = json_object.pop('degree')
 	if 'level' in json_object.keys():
 		json_object['degree_level'] = json_object.pop('level')
+
+	# categories
+	if 'parents' in json_object.keys():
+		# grab the complete list of parents from the categories tree
+		#print("Parents: "+json_object['parents'])
+		if json_object['parents'] not in categories.keys():
+			print("Error loading categories! Key: "+json_object['parents'])
+		else:
+			json_object['parents'] = categories[json_object['parents']]['parents']
 
 	# required keys
 	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
@@ -135,6 +155,19 @@ def parse_object(json_object):
 
 	return [json_object,with_errors]
 
+# Import the categories we've already processed from the JSON storage.
+def load_categories():
+	# regretting my life decisions right about now
+	global categories
+	try:
+		with open(DEFINITIONS_DIRECTORY+DIRECTORY_SEPARATOR+CATEGORY_FILENAME, 'r', encoding='utf-8') as f:
+			data = json.load(f)
+			categories = data
+	except FileNotFoundError:
+		print("We can't find the file ["+DEFINITIONS_DIRECTORY+DIRECTORY_SEPARATOR+CATEGORY_FILENAME+"]. Please make sure it actually exists and is accessible by the user executing the script!")
+	f.close()
+	return
+
 # Setting up argument parsing
 def parse_arguments():
 	parser = argparse.ArgumentParser(description='Parse some JSON.')
@@ -164,7 +197,9 @@ def main():
 	except FileNotFoundError:
 		print("We can't find the file ["+INPUT_DIRECTORY+DIRECTORY_SEPARATOR+args.infile+"]. Please make sure it actually exists and is accessible by the user executing the script!")
 
-	#[print(i) for i in directories]
+	load_categories()
+
+#	print("Categories:\n\n"+json.dumps(categories))
 
 	file_index = 0
 	local_index = 1

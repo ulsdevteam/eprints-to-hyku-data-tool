@@ -1,36 +1,77 @@
 import argparse, csv, datetime, json, math, os
 from pytz import timezone
+from pathlib import Path
 
-LOGFILE_DEFAULT = "logs/default.log"
-LOGFILE_DEFAULT_ERROR = "logs/error.log"
-LOGFILE_DEFAULT_DETAILS = "logs/details.log"
+DIRECTORY_SEPARATOR = "/"
+INPUT_DIRECTORY = "import"
+OUTPUT_DIRECTORY = "output"
+
+BATCH_DATE_FORMAT = "%Y-%m-%d %H-%M-%S"
+EASTERN_TIMEZONE = timezone('US/Eastern')
+BATCH_START_TIME = datetime.datetime.now(EASTERN_TIMEZONE)
+BATCH_NAME = BATCH_START_TIME.strftime(BATCH_DATE_FORMAT)
+
+LOGFILE_DIRECTORY = "logs"
+LOGFILE_DEFAULT = "default.log"
+LOGFILE_DEFAULT_ERROR = "error.log"
+LOGFILE_DEFAULT_DETAILS = "details.log"
 LOGFILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
-LOGFILE_MISSING_DEGREE_NAME = "logs/missing_degree_name.log"
-LOGFILE_MISSING_DEGREE_LEVEL = "logs/missing_degree_level.log"
+LOGFILE_MISSING_DEGREE_NAME = "missing_degree_name.log"
+LOGFILE_MISSING_DEGREE_LEVEL = "missing_degree_level.log"
+LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
+
+def error_to_terminal(error, error_code=1):
+	print("\nFatal error!\n\n"+error+"\n\n")
+	sys.exit(error_code)
+
+def set_up_directory(dirname):
+	our_directory = Path(dirname)
+	if our_directory.exists():
+		if our_directory.is_dir():
+			return
+		# Note: I haven't dealt with the condition in which a file exists with the filename of our directory
+		# So that could hypothetically result in some unexpected behavior.
+	try:
+		os.makedirs(dirname)
+	except:
+		error_to_terminal("Error setting up directory.")
+	return
 
 def log_activity_to_file(logstring="Unknown action.", filename=LOGFILE_DEFAULT):
-	eastern = timezone('US/Eastern')
-	local_time = datetime.datetime.now(eastern)
-	with open(filename, 'a') as output_file:
-		output_file.write(local_time.strftime(LOGFILE_DATE_FORMAT)+": "+logstring+"\n")
-	output_file.close()
+	local_time = datetime.datetime.now(EASTERN_TIMEZONE)
+	try:
+		with open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+filename, 'a') as output_file:
+			output_file.write(local_time.strftime(LOGFILE_DATE_FORMAT)+": "+logstring+"\n")
+		output_file.close()
+	except:
+		error_to_terminal("Error sending log to file.\nLogstring: "+logstring+"\nLog file: "+LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+filename)
 
 def save_json_to_file(json_object, filename, file_encoding='utf-8'):
-	with open(filename, 'w', encoding=file_encoding) as output_file:
-		json.dump(json_object, output_file, ensure_ascii=False, indent=4)
-	output_file.close()
+	dirname = OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME
+	set_up_directory(dirname)
+	try:
+		with open(dirname+DIRECTORY_SEPARATOR+filename, 'w', encoding=file_encoding) as output_file:
+			json.dump(json_object, output_file, ensure_ascii=False, indent=4)
+		output_file.close()
+	except:
+		error_to_terminal("Error writing JSON to file.\nOutput file: "+dirname+DIRECTORY_SEPARATOR+filename)
 
 def save_csv_to_file(json_object, filename, fieldnames, file_encoding='utf-8'):
-	with open(filename, 'w', encoding=file_encoding, newline='\r') as output_file:
-		writer = csv.DictWriter(output_file, fieldnames=fieldnames, dialect="excel")
+	dirname = OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME
+	set_up_directory(dirname)
+	try:
+		with open(dirname+DIRECTORY_SEPARATOR+filename, 'w', encoding=file_encoding, newline='\r') as output_file:
+			writer = csv.DictWriter(output_file, fieldnames=fieldnames, dialect="excel")
 
-		writer.writeheader()
-		for row in json_object:
-			#for key, value in row.items():
-				#print(str(key)+"->"+str(value)+" ("+str(type(value))+")")
-			writer.writerow(row)
-			#print(json.dumps(row, indent=4))
-	output_file.close()
+			writer.writeheader()
+			for row in json_object:
+				#for key, value in row.items():
+					#print(str(key)+"->"+str(value)+" ("+str(type(value))+")")
+				writer.writerow(row)
+				#print(json.dumps(row, indent=4))
+		output_file.close()
+	except:
+		error_to_terminal("Error writing CSV to file.\nOutput file: "+dirname+DIRECTORY_SEPARATOR+filename)
 
 # convert lists to pipe-delimited strings for CSV import
 # note that we shouldn't need to add our own quotes
@@ -63,17 +104,29 @@ def parse_object(json_object):
 		json_object['degree_name'] = json_object.pop('degree')
 	if 'level' in json_object.keys():
 		json_object['degree_level'] = json_object.pop('level')
+
 	# required keys
-	if 'degree_name' not in json_object.keys():
-		json_object['degree_name'] = "Unknown"
+	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
+		json_object['degree_name'] = "Unknown Degree Name"
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_ERROR)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_DETAILS)
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_MISSING_DEGREE_NAME)
 		with_errors = True
-	if 'degree_level' not in json_object.keys():
-		json_object['degree_level'] = "Unknown"
+	if 'degree_level' not in json_object.keys() or not json_object['degree_level']:
+		json_object['degree_level'] = "Unknown Degree Level"
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_ERROR)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_DETAILS)
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_MISSING_DEGREE_LEVEL)
 		with_errors = True
+	if 'keyword' not in json_object.keys() or not json_object['keyword']:
+		json_object['keyword'] = 'Missing Keywords'
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_DEFAULT_ERROR)
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_DEFAULT_DETAILS)
+		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_MISSING_KEYWORDS)
+		with_errors = True
+
+
+
 
 	if with_errors:
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" was converted, with errors.", LOGFILE_DEFAULT_DETAILS)
@@ -100,16 +153,16 @@ def main():
 	args = parse_arguments()
 
 	# Clear out the detailed log from the last run.
-	open(LOGFILE_DEFAULT_DETAILS, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_DEFAULT_DETAILS, 'w').close()
 	log_activity_to_file("Conversion started.")
 	log_activity_to_file("Conversion started.", LOGFILE_DEFAULT_DETAILS)
 
 	try:
 	#	directories = os.listdir("./import")
-		with open(args.infile, 'r', encoding='latin-1') as f:
+		with open(INPUT_DIRECTORY+DIRECTORY_SEPARATOR+args.infile, 'r', encoding='latin-1') as f:
 			data = json.load(f)
 	except FileNotFoundError:
-		print("We can't find the file ["+args.infile+"]. Please make sure it actually exists and is accessible by the user executing the script!")
+		print("We can't find the file ["+INPUT_DIRECTORY+DIRECTORY_SEPARATOR+args.infile+"]. Please make sure it actually exists and is accessible by the user executing the script!")
 
 	#[print(i) for i in directories]
 

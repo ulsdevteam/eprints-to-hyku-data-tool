@@ -27,6 +27,9 @@ LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
 
 categories = {}
 
+class logger:
+	pass
+
 def error_to_terminal(error, error_code=1):
 	print("\nFatal error!\n\n"+error+"\n\n")
 	sys.exit(error_code)
@@ -103,13 +106,13 @@ def parse_object(json_object):
 
 	with_errors = False
 	parent_tree = []
+
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
 		if type(value) is list:
 			if len(value) == 1:
 				json_object[key] = value[0]
-			elif len(value) > 1:
-				json_object[key] = stringify_list("|", value)
+
 	# moving keys
 	if 'degree' in json_object.keys():
 		json_object['degree_name'] = json_object.pop('degree')
@@ -117,13 +120,27 @@ def parse_object(json_object):
 		json_object['degree_level'] = json_object.pop('level')
 
 	# categories
+	temp_categories = []
 	if 'parents' in json_object.keys():
 		# grab the complete list of parents from the categories tree
 		#print("Parents: "+json_object['parents'])
-		if json_object['parents'] not in categories.keys():
-			print("Error loading categories! Key: "+json_object['parents'])
+		if type(json_object['parents']) is list:
+			for parent_id in json_object['parents']:
+				temp_categories.append(parent_id)
+				if parent_id not in categories.keys():
+					print("Error loading categories! Key: "+json_object['parents'])
+				else:
+					if type(categories[parent_id]['parents']) is list:
+						for nested_id in categories[parent_id]['parents']:
+							temp_categories.append(nested_id)
+					else:
+						temp_categories.append(categories[parent_id]['parents'])
 		else:
-			json_object['parents'] = categories[json_object['parents']]['parents']
+			temp_categories += categories[json_object['parents']]['parents']
+
+	# move temp variable over to object. List and Set nonsense is deduping entries.
+	json_object['parents'] = list(set(temp_categories))
+	json_object['parents'].sort()
 
 	# required keys
 	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
@@ -145,8 +162,13 @@ def parse_object(json_object):
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_MISSING_KEYWORDS)
 		with_errors = True
 
-
-
+	# quick and dirty fix for the JSON import pulling everything into a list
+	for key,value in json_object.items():
+		if type(value) is list:
+			if len(value) == 1:
+				json_object[key] = value[0]
+			elif len(value) > 1:
+				json_object[key] = stringify_list("|", value)
 
 	if with_errors:
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" was converted, with errors.", LOGFILE_DEFAULT_DETAILS)
@@ -185,8 +207,14 @@ def zero_pad_size(count, max_size):
 def main():
 	args = parse_arguments()
 
-	# Clear out the detailed log from the last run.
+	# Clear out the logs from the last run.
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_DEFAULT, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_DEFAULT_ERROR, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_DEFAULT_DETAILS, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_DEGREE_NAME, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_DEGREE_LEVEL, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_KEYWORDS, 'w').close()
+
 	log_activity_to_file("Conversion started.")
 	log_activity_to_file("Conversion started.", LOGFILE_DEFAULT_DETAILS)
 

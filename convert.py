@@ -99,6 +99,51 @@ def stringify_list(delimiter, list, escape_character="\\"):
 			new_string = new_string + delimiter + str(value)
 	return new_string
 
+# Take an unsorted list of committee members and sort it by role and then by name
+# inside each role
+def parse_committee(committee_list):
+	# we don't actually know for sure that we don't (or won't) have multiple chairs/cochairs
+	# so let's treat all of the roles as multi-fields
+	committee = []
+	committee_chair = []
+	committee_cochair = []
+	committee_members = []
+
+	if type(committee_list) == list:
+		for committee_member in committee_list:
+			temp_member = {}
+			temp_member['full-string'] = committee_member
+
+			# if we can't split the string, that means we don't
+			#	have a role to sort on. Let's default to committee member.
+			#
+			# this is, annoyingly, more common than you'd think
+			if committee_member.find(" - ") == -1:
+				committee_members.append(committee_member+" - Committee Member")
+			else:
+				# if we DO have a role to split on:
+				(temp_member['name'], temp_member['role']) = committee_member.split(" - ", 1)
+				if temp_member['role'] == "Committee Chair":
+					committee_chair.append(temp_member['full-string'])
+				if temp_member['role'] == "Committee CoChair":
+					committee_cochair.append(temp_member['full-string'])
+				if temp_member['role'] == "Committee Member":
+					committee_members.append(temp_member['full-string'])
+
+		# Sort alphabetically within each role. Most of the names (all of the names?) are in
+		# last name comma first name. If they're not, we don't have enough information to plausibly
+		# and sensitively identify how to sort by family name with both titles, middle names,
+		# and multiple family names in the mix, so we'll sort alphabetically by name as presented
+		# in each category and it should *generally* work.
+		committee_chair.sort()
+		committee_cochair.sort()
+		committee_members.sort()
+	else:
+		return
+
+	committee = committee_chair + committee_cochair + committee_members
+	return committee
+
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
 	# regrets
@@ -144,23 +189,30 @@ def parse_object(json_object):
 
 	# required keys
 	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
-		json_object['degree_name'] = "Unknown Degree Name"
+		json_object['degree_name'] = "Not Specified"
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_ERROR)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_DETAILS)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_MISSING_DEGREE_NAME)
 		with_errors = True
 	if 'degree_level' not in json_object.keys() or not json_object['degree_level']:
-		json_object['degree_level'] = "Unknown Degree Level"
+		json_object['degree_level'] = "Not Specified"
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_ERROR)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_DETAILS)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_MISSING_DEGREE_LEVEL)
 		with_errors = True
 	if 'keyword' not in json_object.keys() or not json_object['keyword']:
-		json_object['keyword'] = 'Missing Keywords'
+		json_object['keyword'] = 'Not Specified'
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_DEFAULT_ERROR)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_DEFAULT_DETAILS)
 		log_activity_to_file("Object \""+json_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_MISSING_KEYWORDS)
 		with_errors = True
+
+	# other cleanup
+	if 'committee_member' in json_object.keys():
+#		temp_debug_value = parse_committee(json_object['committee_member'])
+		json_object['committee_member'] = parse_committee(json_object['committee_member'])
+#		print("Committee:\n"+str(json_object['committee_member']))
+
 
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():

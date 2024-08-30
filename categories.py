@@ -1,7 +1,7 @@
 import argparse, csv, json
 from pathlib import Path
 
-CATEGORY_FILENAME = "categories.json"
+CATEGORY_FILENAME = "categories"
 DIRECTORY_SEPARATOR = "/"
 INPUT_DIRECTORY = "import"
 OUTPUT_DIRECTORY = "definitions"
@@ -18,6 +18,7 @@ class Category_Definitions:
 			self.import_raw_categories_from_csv(filename)
 			self.build_complete_trees_for_categories()
 			self.save_categories_to_json()
+			self.save_categories_to_csv()
 		elif mode == "load":
 			self.import_from_json()
 
@@ -83,7 +84,7 @@ class Category_Definitions:
 
 	# Export the categories once we've built them to a JSON file for ease of future loading.
 	def save_categories_to_json(self):
-		filename = OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+CATEGORY_FILENAME
+		filename = OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+CATEGORY_FILENAME+".json"
 		#set_up_directory(dirname)
 		try:
 			with open(filename, 'w', encoding="utf-8") as output_file:
@@ -92,6 +93,48 @@ class Category_Definitions:
 		except:
 			error_to_terminal("Error writing JSON to file.\nOutput file: "+filename)
 
+	def save_categories_to_csv(self):
+		filename = OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+CATEGORY_FILENAME+".csv"
+		formatted_output = []
+		temp_formatted_object = {}
+		fieldnames = ["source_identifier", "model", "title", "description", "parents"]
+
+		# parse the output - we need fields in the right place.
+		for category_id in self.categories.keys():
+			temp_formatted_object = {}
+			temp_formatted_object['source_identifier'] = self.categories[category_id]['identifier']
+			temp_formatted_object['model'] = "Collection"
+			temp_formatted_object['title'] = self.categories[category_id]['breadcrumbed_name']
+			temp_formatted_object['description'] = self.categories[category_id]['description']
+			temp_formatted_object['parents'] = self.stringify_list("|", self.categories[category_id]['parents'])
+			formatted_output.append(temp_formatted_object)
+
+		try:
+			with open(filename, 'w', encoding='utf-8', newline='\r') as output_file:
+				writer = csv.DictWriter(output_file, fieldnames=fieldnames, dialect="excel")
+
+				writer.writeheader()
+				for row in formatted_output:
+					writer.writerow(row)
+			output_file.close()
+		except:
+			error_to_terminal("Error writing CSV to file.\nOutput file: "+dirname+DIRECTORY_SEPARATOR+filename)
+
+	# convert lists to pipe-delimited strings for CSV import
+	# note that we shouldn't need to add our own quotes
+	def stringify_list(self, delimiter, my_list, escape_character="\\"):
+		new_string = ""
+		for value in my_list:
+			# Hunt for delimiters in the data that we need to escape
+			if delimiter in value:
+				value = value.replace(delimiter, escape_character+delimiter)
+
+			# Don't want to start with your delimiter
+			if not new_string:
+				new_string = str(value)
+			else:
+				new_string = new_string + delimiter + str(value)
+		return new_string
 
 # Setting up argument parsing
 def parse_arguments():

@@ -10,6 +10,7 @@ INPUT_DIRECTORY = "import"
 OUTPUT_DIRECTORY = "output"
 DEFINITIONS_DIRECTORY = "definitions"
 CATEGORY_FILENAME = "categories.json"
+LANGUAGE_CODE_TABLE_FILENAME = "languages.json"
 
 BATCH_DATE_FORMAT = "%Y-%m-%d %H-%M-%S"
 EASTERN_TIMEZONE = timezone('US/Eastern')
@@ -25,10 +26,43 @@ LOGFILE_MISSING_DEGREE_NAME = "missing_degree_name.log"
 LOGFILE_MISSING_DEGREE_LEVEL = "missing_degree_level.log"
 LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
 
+
 categories = {}
 
-class logger:
-	pass
+# Load in language codes from an (unfortunately) known file. There are better ways.
+# At least I'm starting with an object this time.
+class Language_Codes:
+	language_table_code_first = {}
+	language_table_language_first = {}
+
+	def __init__(self):
+		self.load_languages()
+
+	# builds both tables, one by loading in directly with the JSON module, the other by inverting the original table
+	def load_languages(self):
+		try:
+			with open(DEFINITIONS_DIRECTORY+DIRECTORY_SEPARATOR+LANGUAGE_CODE_TABLE_FILENAME, 'r', encoding='utf-8') as f:
+				data = json.load(f)
+				self.language_table_code_first = data
+		except FileNotFoundError:
+			print("We can't find the file ["+DEFINITIONS_DIRECTORY+DIRECTORY_SEPARATOR+LANGUAGE_CODE_TABLE_FILENAME+"]. Please make sure it actually exists and is accessible by the user executing the script!")
+		f.close()
+
+		for language_code in self.language_table_code_first.keys():
+			self.language_table_language_first[self.language_table_code_first[language_code]] = language_code
+
+
+	def get_language_by_code(self, code):
+		if code in self.language_table_code_first.keys():
+			return self.language_table_code_first[code]
+		else:
+			return False
+
+	def get_code_by_language(self, language):
+		if language in self.language_table_language_first.keys():
+			return self.language_table_language_first[language]
+		else:
+			return False
 
 def error_to_terminal(error, error_code=1):
 	print("\nFatal error!\n\n"+error+"\n\n")
@@ -119,7 +153,7 @@ def parse_committee(committee_list):
 			#
 			# this is, annoyingly, more common than you'd think
 			if committee_member.find(" - ") == -1:
-				committee_members.append(committee_member+" - Committee Member")
+				committee_members.append(committee_member)
 			else:
 				# if we DO have a role to split on:
 				(temp_member['name'], temp_member['role']) = committee_member.split(" - ", 1)
@@ -149,6 +183,9 @@ def parse_object(json_object):
 	# regrets
 	global categories
 
+	# slightly fewer regrets
+	languages = Language_Codes()
+
 	with_errors = False
 	parent_tree = []
 
@@ -168,7 +205,6 @@ def parse_object(json_object):
 	temp_categories = []
 	if 'parents' in json_object.keys():
 		# grab the complete list of parents from the categories tree
-		#print("Parents: "+json_object['parents'])
 		if type(json_object['parents']) is list:
 			for parent_id in json_object['parents']:
 				temp_categories.append(parent_id)
@@ -186,6 +222,30 @@ def parse_object(json_object):
 	# move temp variable over to object. List and Set nonsense is deduping entries.
 	json_object['parents'] = list(set(temp_categories))
 	json_object['parents'].sort()
+
+	# disciplines
+	if 'discipline' in json_object.keys():
+		if type(json_object['discipline']) is list:
+			# this should always only be one item
+			if not categories[json_object['discipline'][0]]['breadcrumbed_name']:
+				log_activity_to_file("Object \""+json_object['discipline']+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
+			else:
+				json_object['discipline'] = categories[json_object['discipline'][0]]['breadcrumbed_name']
+		else:
+			if not categories[json_object['discipline']]['breadcrumbed_name']:
+				log_activity_to_file("Object \""+json_object['discipline']+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
+			else:
+				json_object['discipline'] = categories[json_object['discipline']]['breadcrumbed_name']
+
+	# Languages
+	if 'language' in json_object.keys():
+		# hax
+		if type(json_object['language']) is list:
+			json_object['language'] = json_object['language'][0]
+		full_language = ""
+		full_language = languages.get_language_by_code(json_object['language'])
+		if full_language:
+			json_object['language'] = full_language
 
 	# required keys
 	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
@@ -215,6 +275,7 @@ def parse_object(json_object):
 
 
 	# quick and dirty fix for the JSON import pulling everything into a list
+	# annoyingly, this needs to be at the end, leaving me to spot-check a bunch of other stuff further above.
 	for key,value in json_object.items():
 		if type(value) is list:
 			if len(value) == 1:

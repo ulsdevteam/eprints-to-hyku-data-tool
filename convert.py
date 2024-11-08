@@ -1,8 +1,9 @@
-import argparse, csv, datetime, json, math, os, sys
+import argparse, csv, datetime, json, math, os, re, sys
 from pytz import timezone
 from pathlib import Path
 import paramiko # ssh connection
 from getpass import getpass # password input
+from urllib.parse import unquote # fixing mangled filenames...
 
 # Well, this started out pretty simple and now I look at it and want to refactor it.
 # Apologies for the lack of class structure!
@@ -11,6 +12,7 @@ DIRECTORY_SEPARATOR = "/"
 INPUT_DIRECTORY = "import"
 OUTPUT_DIRECTORY = "output"
 WORKING_DIRECTORY = "working"
+WORKING_FILES_DIRECTORY = "working/files"
 DEFINITIONS_DIRECTORY = "definitions"
 CATEGORY_FILENAME = "categories.json"
 LANGUAGE_CODE_TABLE_FILENAME = "languages.json"
@@ -20,6 +22,8 @@ EASTERN_TIMEZONE = timezone('US/Eastern')
 BATCH_START_TIME = datetime.datetime.now(EASTERN_TIMEZONE)
 BATCH_NAME = BATCH_START_TIME.strftime(BATCH_DATE_FORMAT)
 
+DOCUMENTS_FILENAME = "files.csv"
+
 LOGFILE_DIRECTORY = "logs"
 LOGFILE_DEFAULT = "default.log"
 LOGFILE_DEFAULT_ERROR = "error.log"
@@ -28,6 +32,7 @@ LOGFILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOGFILE_MISSING_DEGREE_NAME = "missing_degree_name.log"
 LOGFILE_MISSING_DEGREE_LEVEL = "missing_degree_level.log"
 LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
+LOGFILE_FAILED_DOWNLOADS = "failed_downloads.log"
 
 # Connect to the source server
 ssh_connection = paramiko.SSHClient()
@@ -41,7 +46,7 @@ print("Enter your password for connecting to "+source_address)
 source_password = getpass()
 
 ssh_connection.connect(source_address, username=source_username, password=source_password)
-sftp_connection = self.ssh_connection.open_sftp()
+sftp_connection = ssh_connection.open_sftp()
 # end connection start
 
 
@@ -199,21 +204,55 @@ def parse_committee(committee_list):
 # Download a file
 def download_file(path, object_id):
 	global sftp_connection
-	# parse object_id
-	# parse path
+	# parse various parts of the path
 	file_path = re.sub("http://d-scholarship.pitt.edu/", "", path)
-	eprint_id = re.search("^\d+", file_path)
-	eprint_id_path = eprint_id.zfill(6)
-	eprint_id_path = eprint_id_path[:2] + "/" + eprint_id_path[:2]
-	eprint_id_path = eprint_id_path[:5] + "/" + eprint_id_path[:5]
-	file_id = re.sub("^\d+/", "", eprint_id)
-	file_id = re.search("^\d+", file_id)
-	file_name = re.sub("^\d+/", "", eprint_id)
-	file_path = "/opt/eprints3/archives/pittir/documents/disk0/00" + eprint_id.zfill(6) + "/" + file_id
-
-	destination_id = eprint_id + "_" + file_name	
 	
-	sftp_connection.get(file_path, WORKING_DIRECTORY+destination_ID)
+	# eprint_id is used for prepending to the file name on save
+	eprint_id = re.search("^\d+", file_path).group()
+	
+	# eprint_id_path is used for building the file path
+	eprint_id_path = eprint_id.zfill(6)
+	eprint_id_path = eprint_id_path[:2] + "/" + eprint_id_path[2:]
+	eprint_id_path = eprint_id_path[:5] + "/" + eprint_id_path[5:]
+	
+	# file_id is zerofilled in and appended to the file path
+	file_id = re.sub("^\d+\/", "", file_path)
+	
+	# file _name (plus eprint_id) is used for the destination filename
+	file_name = re.sub("^\d+\/", "", file_id)
+
+	file_id = re.search("^\d+", file_id).group()
+	file_path = "/opt/eprints3/archives/pittir/documents/disk0/00/" + eprint_id_path + "/" + file_id.zfill(2)
+	destination_id = eprint_id + "_" + file_name
+	print("Downloading file: \""+file_path+"/"+file_name+"\" to \""+WORKING_FILES_DIRECTORY+"/"+destination_id+"\"\n")
+	try:
+		sftp_connection.get(file_path+"/"+file_name, WORKING_DIRECTORY+"/"+destination_id)
+	except:
+		file_name = unquote(file_name)
+		destination_id = eprint_id + "_" + file_name
+		try: 
+			sftp_connection.get(file_path+"/"+file_name, WORKING_DIRECTORY+"/"+destination_id)
+		except:
+			pass
+	# log data into csv
+	# if full
+		# zip it all up
+		# move zip file into exports
+		# clear out working directory
+		# reset counters
+			
+			
+			
+			
+#			stdin, stdout, stderr = ssh_connection.exec_command("ls "+file_path)
+#		        output = []
+#			for line in stdout.readlines():
+#			output.append(line)
+#		if len(output) == 1:
+#			
+#			try:
+#				sftp_connection.get(file_path+"/"+output[0], WORKING_DIRECTORY+"/"+destination_id)
+
 
 
 # class to parse incoming JSON and output JSON
@@ -227,6 +266,12 @@ def parse_object(json_object):
 
 	with_errors = False
 	parent_tree = []
+
+	# Files
+	if 'documents/document/files/file/url' in json_object.keys():
+		# for each element in the array, download the file
+		for url in json_object['documents/document/files/file/url']:
+			download_file(url, json_object['source_identifier'])
 
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
@@ -285,12 +330,6 @@ def parse_object(json_object):
 		full_language = languages.get_language_by_code(json_object['language'])
 		if full_language:
 			json_object['language'] = full_language
-
-	# Files
-	if 'documents/document/files/file/url' in json_object.keys():
-		# for each element in the array, download the file
-		for url in json_object['documents/document/files/file/url']:
-			download_file(url, json_object['source_identifier'])
 
 	# required keys
 	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
@@ -455,5 +494,5 @@ if __name__ == "__main__":
     main()
 
 # cleanup from opening these globally
-sftp_connection.close_connection()
-ssh_connection.close_connection()
+sftp_connection.close()
+ssh_connection.close()

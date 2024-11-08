@@ -8,6 +8,7 @@ from pathlib import Path
 DIRECTORY_SEPARATOR = "/"
 INPUT_DIRECTORY = "import"
 OUTPUT_DIRECTORY = "output"
+WORKING_DIRECTORY = "working"
 DEFINITIONS_DIRECTORY = "definitions"
 CATEGORY_FILENAME = "categories.json"
 LANGUAGE_CODE_TABLE_FILENAME = "languages.json"
@@ -25,6 +26,21 @@ LOGFILE_DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 LOGFILE_MISSING_DEGREE_NAME = "missing_degree_name.log"
 LOGFILE_MISSING_DEGREE_LEVEL = "missing_degree_level.log"
 LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
+
+# Connect to the source server
+ssh_connection = paramiko.SSHClient()
+ssh_connection.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+# Connect to the source server
+source_address = "eprints-prod-01"
+# get the login info for connecting to the server
+source_username = input("Enter your username for connecting to "+source_address+":\n")
+print("Enter your password for connecting to "+source_address)
+source_password = getpass()
+
+ssh_connection.connect(source_address, username=source_username, password=source_password)
+sftp_connection = self.ssh_connection.open_sftp()
+# end connection start
 
 
 categories = {}
@@ -178,10 +194,31 @@ def parse_committee(committee_list):
 	committee = committee_chair + committee_cochair + committee_members
 	return committee
 
+# Download a file
+def download_file(path, object_id):
+	global sftp_connection
+	# parse object_id
+	# parse path
+	file_path = re.sub("http://d-scholarship.pitt.edu/", "", path)
+	eprint_id = re.search("^\d+", file_path)
+	eprint_id_path = eprint_id.zfill(6)
+	eprint_id_path = eprint_id_path[:2] + "/" + eprint_id_path[:2]
+	eprint_id_path = eprint_id_path[:5] + "/" + eprint_id_path[:5]
+	file_id = re.sub("^\d+/", "", eprint_id)
+	file_id = re.search("^\d+", file_id)
+	file_name = re.sub("^\d+/", "", eprint_id)
+	file_path = "/opt/eprints3/archives/pittir/documents/disk0/00" + eprint_id.zfill(6) + "/" + file_id
+
+	destination_id = eprint_id + "_" + file_name	
+	
+	sftp_connection.get(file_path, WORKING_DIRECTORY+destination_ID)
+
+
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
 	# regrets
 	global categories
+	global sftp_connection
 
 	# slightly fewer regrets
 	languages = Language_Codes()
@@ -246,6 +283,12 @@ def parse_object(json_object):
 		full_language = languages.get_language_by_code(json_object['language'])
 		if full_language:
 			json_object['language'] = full_language
+
+	# Files
+	if 'documents/document/files/file/url' in json_object.keys():
+		# for each element in the array, download the file
+		for url in json_object['documents/document/files/file/url']:
+			download_file(url, json_object['source_identifier'])
 
 	# required keys
 	if 'degree_name' not in json_object.keys() or not json_object['degree_name']:
@@ -408,3 +451,7 @@ def main():
 
 if __name__ == "__main__":  
     main()
+
+# cleanup from opening these globally
+sftp_connection.close_connection()
+ssh_connection.close_connection()

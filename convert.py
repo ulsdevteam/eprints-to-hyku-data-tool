@@ -1,6 +1,8 @@
 import argparse, csv, datetime, json, math, os, sys
 from pytz import timezone
 from pathlib import Path
+import paramiko # ssh connection
+from getpass import getpass # password input
 
 # Well, this started out pretty simple and now I look at it and want to refactor it.
 # Apologies for the lack of class structure!

@@ -1,9 +1,11 @@
 import argparse, csv, datetime, json, math, os, re, sys
+import shutil # for zipping
 from pytz import timezone
 from pathlib import Path
 import paramiko # ssh connection
 from getpass import getpass # password input
 from urllib.parse import unquote # fixing mangled filenames...
+import subprocess # to run shell commands??
 
 # Well, this started out pretty simple and now I look at it and want to refactor it.
 # Apologies for the lack of class structure!
@@ -23,6 +25,7 @@ BATCH_START_TIME = datetime.datetime.now(EASTERN_TIMEZONE)
 BATCH_NAME = BATCH_START_TIME.strftime(BATCH_DATE_FORMAT)
 
 DOCUMENTS_FILENAME = "files.csv"
+DOCUMENTS_METADATA_HEADERS = ['item', 'source_identifier', 'model', 'parents', 'title', 'creator', 'keyword', 'rights', 'license', 'type', 'degree', 'level', 'discipline', 'grantor', 'advisor', 'commitee member', 'department', 'format', 'date', 'contributor', 'description', 'publisher', 'subject', 'language', 'identifier', 'relation', 'source', 'abstract', 'admin_note']
 
 LOGFILE_DIRECTORY = "logs"
 LOGFILE_DEFAULT = "default.log"
@@ -68,7 +71,7 @@ class Language_Codes:
 				data = json.load(f)
 				self.language_table_code_first = data
 		except FileNotFoundError:
-			print("We can't find the file ["+DEFINITIONS_DIRECTORY+DIRECTORY_SEPARATOR+LANGUAGE_CODE_TABLE_FILENAME+"]. Please make sure it actually exists and is accessible by the user executing the script!")
+			print("We can't find the file ["+DEFINITIONS_DIRECTORY+DIRECTORY_SEPARATOR+LANGUAGE_CODE_TABLE_FILENAME+"]. Please make sure it actually  and is accessible by the user executing the script!")
 		f.close()
 
 		for language_code in self.language_table_code_first.keys():
@@ -101,7 +104,7 @@ def set_up_directory(dirname):
 	try:
 		os.makedirs(dirname)
 	except:
-		error_to_terminal("Error setting up directory.")
+		error_to_terminal(f"Error setting up directory: {dirname}")
 	return
 
 def log_activity_to_file(logstring="Unknown action.", filename=LOGFILE_DEFAULT):
@@ -124,10 +127,8 @@ def save_json_to_file(json_object, filename, file_encoding='utf-8'):
 		error_to_terminal("Error writing JSON to file.\nOutput file: "+dirname+DIRECTORY_SEPARATOR+filename)
 
 def save_csv_to_file(json_object, filename, fieldnames, file_encoding='utf-8'):
-	dirname = OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME
-	set_up_directory(dirname)
 	try:
-		with open(dirname+DIRECTORY_SEPARATOR+filename, 'w', encoding=file_encoding, newline='\r') as output_file:
+		with open(WORKING_DIRECTORY+DIRECTORY_SEPARATOR+filename, 'w', encoding=file_encoding, newline='\r') as output_file:
 			writer = csv.DictWriter(output_file, fieldnames=fieldnames, dialect="excel")
 
 			writer.writeheader()
@@ -138,7 +139,7 @@ def save_csv_to_file(json_object, filename, fieldnames, file_encoding='utf-8'):
 				#print(json.dumps(row, indent=4))
 		output_file.close()
 	except:
-		error_to_terminal("Error writing CSV to file.\nOutput file: "+dirname+DIRECTORY_SEPARATOR+filename)
+		error_to_terminal("Error writing CSV to file.\nOutput file: "+WORKING_FILES_DIRECTORY+DIRECTORY_SEPARATOR+filename)
 
 # convert lists to pipe-delimited strings for CSV import
 # note that we shouldn't need to add our own quotes
@@ -201,8 +202,10 @@ def parse_committee(committee_list):
 	committee = committee_chair + committee_cochair + committee_members
 	return committee
 
-# Download a file
+# Download a file. Return the filename.
 def download_file(path, object_id):
+	global file_count
+	global zip_count
 	global sftp_connection
 	# parse various parts of the path
 	file_path = re.sub("http://d-scholarship.pitt.edu/", "", path)
@@ -224,36 +227,19 @@ def download_file(path, object_id):
 	file_id = re.search("^\d+", file_id).group()
 	file_path = "/opt/eprints3/archives/pittir/documents/disk0/00/" + eprint_id_path + "/" + file_id.zfill(2)
 	destination_id = eprint_id + "_" + file_name
-	print("Downloading file: \""+file_path+"/"+file_name+"\" to \""+WORKING_FILES_DIRECTORY+"/"+destination_id+"\"\n")
+	print(f"\t\tAssociated File: {file_name} -> {destination_id}")
 	try:
-		sftp_connection.get(file_path+"/"+file_name, WORKING_DIRECTORY+"/"+destination_id)
+		sftp_connection.get(file_path+"/"+file_name, WORKING_FILES_DIRECTORY+"/"+destination_id)
 	except:
 		file_name = unquote(file_name)
 		destination_id = eprint_id + "_" + file_name
 		try: 
-			sftp_connection.get(file_path+"/"+file_name, WORKING_DIRECTORY+"/"+destination_id)
+			sftp_connection.get(file_path+"/"+file_name, WORKING_FILES_DIRECTORY+"/"+destination_id)
 		except:
 			pass
-	# log data into csv
-	# if full
-		# zip it all up
-		# move zip file into exports
-		# clear out working directory
-		# reset counters
+	
+	return destination_id
 			
-			
-			
-			
-#			stdin, stdout, stderr = ssh_connection.exec_command("ls "+file_path)
-#		        output = []
-#			for line in stdout.readlines():
-#			output.append(line)
-#		if len(output) == 1:
-#			
-#			try:
-#				sftp_connection.get(file_path+"/"+output[0], WORKING_DIRECTORY+"/"+destination_id)
-
-
 
 # class to parse incoming JSON and output JSON
 def parse_object(json_object):
@@ -266,12 +252,15 @@ def parse_object(json_object):
 
 	with_errors = False
 	parent_tree = []
+	
+	print(f"\tParsing item: {json_object['source_identifier'][0]}")
 
 	# Files
+	json_object['items'] = []
 	if 'documents/document/files/file/url' in json_object.keys():
 		# for each element in the array, download the file
 		for url in json_object['documents/document/files/file/url']:
-			download_file(url, json_object['source_identifier'])
+			json_object['items'].append(download_file(url, json_object['source_identifier'][0]))
 
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
@@ -401,6 +390,15 @@ def parse_arguments():
 def zero_pad_size(count, max_size):
 	return math.ceil(math.log10(count/max_size))
 
+# reset file system - clear out the working directory
+def rebuild_working_dir():
+	# Clear out the working directory from the last run, if necessary
+	if Path(WORKING_DIRECTORY).exists():
+		shutil.rmtree(WORKING_DIRECTORY)
+	set_up_directory(WORKING_DIRECTORY)
+	set_up_directory(WORKING_FILES_DIRECTORY)
+
+
 def main():
 	args = parse_arguments()
 
@@ -411,6 +409,12 @@ def main():
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_DEGREE_NAME, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_DEGREE_LEVEL, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_KEYWORDS, 'w').close()
+
+	# Clear out the working directory from the last run, if necessary
+	rebuild_working_dir()
+
+	# Initialize the batch directory
+	set_up_directory(OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME)
 
 	log_activity_to_file("Conversion started.")
 	log_activity_to_file("Conversion started.", LOGFILE_DEFAULT_DETAILS)
@@ -423,8 +427,6 @@ def main():
 		print("We can't find the file ["+INPUT_DIRECTORY+DIRECTORY_SEPARATOR+args.infile+"]. Please make sure it actually exists and is accessible by the user executing the script!")
 
 	load_categories()
-
-#	print("Categories:\n\n"+json.dumps(categories))
 
 	file_index = 0
 	local_index = 1
@@ -461,23 +463,52 @@ def main():
 				fieldnames[fieldname] = fieldname
 
 		if local_index >= args.max_size:
+			batch_filename = args.outfile+str(file_index).rjust(pad_size, '0')
+			log_activity_to_file("Writing metadata into "+batch_filename, LOGFILE_DEFAULT_DETAILS)
+			print(f"\n\tWriting to batch: {batch_filename}\n")
+
 			# Write to an output file. We're using the file_index to build the filename here.
-			save_json_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.json')
-			save_csv_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.csv', fieldnames)
-			#print(json.dumps(json_output, indent=4))
-			# reset for our next file
-			log_activity_to_file("Writing objects to files starting with "+args.outfile+str(file_index).rjust(pad_size, '0'), LOGFILE_DEFAULT_DETAILS)
+			save_json_to_file(json_output, batch_filename+'.json')
+			save_csv_to_file(json_output, batch_filename+'.csv', fieldnames)
+			
+			# Zip our output file along with our documents, and put it in the working directory
+			log_activity_to_file("Creating zip archive: "+WORKING_DIRECTORY+DIRECTORY_SEPARATOR+batch_filename, LOGFILE_DEFAULT_DETAILS)
+			shutil.make_archive(batch_filename, 'zip', WORKING_DIRECTORY)
+
+			# move zip file into exports
+			batch_filename = batch_filename + ".zip"
+			log_activity_to_file("Moving archive to: "+OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME+DIRECTORY_SEPARATOR+batch_filename, LOGFILE_DEFAULT_DETAILS)
+			shutil.move(batch_filename, OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME+DIRECTORY_SEPARATOR+batch_filename)
+			
+			rebuild_working_dir()
+			
+			# reset counters for our next file
 			json_output = []
 			file_index += 1
 			local_index = 0
 
+	# write out the last metadata
 	if local_index > 0:
+		batch_filename = args.outfile+str(file_index).rjust(pad_size, '0')
+		log_activity_to_file("Writing metadata into "+batch_filename, LOGFILE_DEFAULT_DETAILS)
+		print(f"\n\tWriting to batch: {batch_filename}\n")
+
 		# Write to an output file. We're using the file_index to build the filename here.
-		save_json_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.json')
-		save_csv_to_file(json_output, args.outfile+str(file_index).rjust(pad_size, '0')+'.csv', fieldnames)
-		#print(json.dumps(json_output, indent=4))
-		# reset for our next file
-		log_activity_to_file("Writing objects to files starting with "+args.outfile+str(file_index).rjust(pad_size, '0'), LOGFILE_DEFAULT_DETAILS)
+		save_json_to_file(json_output, batch_filename+'.json')
+		save_csv_to_file(json_output, batch_filename+'.csv', fieldnames)
+		
+		# Zip our output file along with our documents, and put it in the working directory
+		log_activity_to_file("Creating zip archive: "+WORKING_DIRECTORY+DIRECTORY_SEPARATOR+batch_filename, LOGFILE_DEFAULT_DETAILS)
+		shutil.make_archive(batch_filename, 'zip', WORKING_DIRECTORY)
+
+		# move zip file into exports
+		batch_filename = batch_filename + ".zip"
+		log_activity_to_file("Moving archive to: "+OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME+DIRECTORY_SEPARATOR+batch_filename, LOGFILE_DEFAULT_DETAILS)
+		shutil.move(batch_filename, OUTPUT_DIRECTORY+DIRECTORY_SEPARATOR+BATCH_NAME+DIRECTORY_SEPARATOR+batch_filename)
+		
+		rebuild_working_dir()
+		
+		# reset counters for our next file
 		json_output = []
 		file_index += 1
 		local_index = 0

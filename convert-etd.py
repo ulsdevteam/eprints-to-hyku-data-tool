@@ -55,7 +55,6 @@ ssh_connection.connect(source_address, username=source_username, password=source
 sftp_connection = ssh_connection.open_sftp()
 # end connection start
 
-
 categories = {}
 
 # Load in language codes from an (unfortunately) known file. There are better ways.
@@ -295,7 +294,7 @@ def parse_object(json_object):
 			file_downloaded = download_file(url, json_object['source_identifier'][0])
 			if file_downloaded:
 				new_object['item'].append(file_downloaded)
-	if len(new_object['item'] < 1):
+	if len(new_object['item']) < 1:
 		new_object['item'] = ""
 
 	# quick and dirty fix for the JSON import pulling everything into a list
@@ -334,8 +333,8 @@ def parse_object(json_object):
 			temp_categories += categories[json_object['parents']]['parents']
 
 	# move temp variable over to object. List and Set nonsense is deduping entries.
-	json_object['parents'] = list(set(temp_categories))
-	json_object['parents'].sort()
+	new_object['parents'] = list(set(temp_categories))
+	new_object['parents'].sort()
 
 	###################################################
 	# Other Fields
@@ -585,7 +584,7 @@ def main():
 
 	# setup for the primary loop
 	file_index = 0
-	local_index = 1
+	local_index = 0
 	# get the padding size (so we can zero-pad our filenames)
 	pad_size = zero_pad_size(len(data), args.max_size)
 	# initializing object with empty list

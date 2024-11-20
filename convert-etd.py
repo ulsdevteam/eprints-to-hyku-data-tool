@@ -1,4 +1,5 @@
-import argparse, csv, datetime, json, math, os, re, sys
+import argparse, csv, json, math, os, re, sys
+from datetime import datetime # the datetime people are crazy
 import shutil # for zipping
 from pytz import timezone
 from pathlib import Path
@@ -22,7 +23,7 @@ LANGUAGE_CODE_TABLE_FILENAME = "languages.json"
 
 BATCH_DATE_FORMAT = "%Y-%m-%d %H-%M-%S"
 EASTERN_TIMEZONE = timezone('US/Eastern')
-BATCH_START_TIME = datetime.datetime.now(EASTERN_TIMEZONE)
+BATCH_START_TIME = datetime.now(EASTERN_TIMEZONE)
 BATCH_NAME = BATCH_START_TIME.strftime(BATCH_DATE_FORMAT)
 
 DOCUMENTS_FILENAME = "files.csv"
@@ -39,6 +40,7 @@ LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
 LOGFILE_MISSING_RIGHTS = "missing_rights.log"
 LOGFILE_FAILED_DOWNLOADS = "failed_downloads.log"
 LOGFILE_JSON_CACHE = "json.log"
+LOGFILE_EMBARGO = "embargo.log"
 
 # Connect to the source server
 ssh_connection = paramiko.SSHClient()
@@ -122,7 +124,7 @@ def set_up_directory(dirname):
 	return
 
 def log_activity_to_file(logstring="Unknown action.", filename=LOGFILE_DEFAULT):
-	local_time = datetime.datetime.now(EASTERN_TIMEZONE)
+	local_time = datetime.now(EASTERN_TIMEZONE)
 	try:
 		with open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+filename, 'a') as output_file:
 			output_file.write(local_time.strftime(LOGFILE_DATE_FORMAT)+": "+logstring+"\n")
@@ -485,6 +487,59 @@ def parse_object(json_object):
 	if 'admin_note' in json_object.keys():
 		new_object['admin_note'] = json_object['admin_note']
 
+	# ##################################
+	#  Embargo Handling
+	# ##################################
+	
+	# Ugh, I had this written out and thought I was debugging it, but it never made it to the server and I lost it.
+	# My recollection of what went here:
+	
+	# if embargo date is after current date, then start processing embargo stuff
+	# check if embargo date exists, first
+	if 'documents/document/date_embargo' in json_object.keys():
+
+		# reduce embargo date down to a single value
+		if type(json_object['documents/document/date_embargo']) is list:
+			json_object['documents/document/date_embargo'] = json_object['documents/document/date_embargo'][0]
+
+		# if we have an embargo date in the future
+		if datetime.strptime(json_object['documents/document/date_embargo'], '%Y-%m-%d') > datetime.now():
+			# we have a possible embargo!
+			print(f"\t\tEMBARGO: We have a possible embargo for \"{json_object['source_identifier']}\"")
+			
+			# assign embargo release date
+			new_object['embargo_release_date'] = json_object['documents/document/date_embargo']
+
+			# set embargo - this is an or, not an and, so handling this separately and overwriting is fine
+			if 'metadata_visibility' in json_object.keys():
+				if type(json_object['metadata_visibility']) is list:
+					json_object['metadata_visibility'] = json_object['metadata_visibility'][0]
+				# set embargo status
+				if json_object['metadata_visibility'] != "show":
+					new_object['visibility'] = "embargo"
+			if 'full_text_status' in json_object.keys():
+				if type(json_object['full_text_status']) is list:
+					json_object['full_text_status'] = json_object['full_text_status'][0]
+				# set embargo status
+				if json_object['full_text_status'] != "show":
+					new_object['visibility'] = "embargo"
+
+			# Figure out document security
+			if 'documents/document/security' in json_object.keys():
+				if type(json_object['documents/document/security']) is list:
+					json_object['documents/document/security'] = json_object['documents/document/security'][0]
+				if json_object['documents/document/security'] == "public":
+					new_object['visibility_during_embargo'] = "open"
+				if json_object['documents/document/security'] == "validuser":
+					new_object['visibility_during_embargo'] = "authenticated"
+				if json_object['documents/document/security'] == "restricted":
+					new_object['visibility_during_embargo'] = "restricted"
+			
+			# set visibility after embargo - if we have an embargo, this is always set
+			new_object['visibility_after_embargo'] = "open"
+			
+			log_activity_to_file(f"{new_object['source_identifier']} - ORIGINAL: embargo_date {json_object['documents/document/date_embargo']} / metadata_visibility {json_object['metadata_visibility']} / full_text_status {json_object['full_text_status']} / security {json_object['documents/document/security']} || NEW EMBARGO INFO - embargo_release_date {new_object['embargo_release_date']} / visibility {new_object['visibility']} / visibility_during_embargo {new_object['visibility_during_embargo']} / visibility_after_embargo {new_object['visibility_after_embargo']}", LOGFILE_EMBARGO)
+
 
 	# quick and dirty fix for the JSON import pulling everything into a list
 	# annoyingly, this needs to be at the end, leaving me to spot-check a bunch of other stuff further above.
@@ -546,6 +601,7 @@ def clear_logs():
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_JSON_CACHE, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_RIGHTS, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_FAILED_DOWNLOADS, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_EMBARGO, 'w').close()
 	
 
 # reset file system - clear out the working directory

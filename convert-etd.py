@@ -316,6 +316,7 @@ def parse_object(json_object):
 		# identifier
 		# we have two values coming in through the data, but we instead want to use the d-scholarship URL without the interstitial path.
 		# This is stored in the source_identifier, and http://d-scholarship.pitt.edu/id/eprint/10172 should become http://d-scholarship.pitt.edu/10172
+		# seems easier to do things this way to standardize on the prefix - make sure we're always showing https, which has not been the norm in the data
 		new_object['identifier'] = re.sub("https?://d-scholarship.pitt.edu/id/eprint/", "", new_object['source_identifier'])
 		new_object['identifier'] = "https://d-scholarship.pitt.edu/" + new_object['identifier']
 

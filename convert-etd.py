@@ -305,10 +305,19 @@ def parse_object(json_object):
 			if len(value) == 1:
 				json_object[key] = value[0]
 
-	# source_identifier field
-	# Optional in v3.
+	# source_identifier field AND identifier field
+	# source_identifier optional in v3 but required earlier. identifier field optional.
 	if 'source_identifier' in json_object.keys():
 		new_object['source_identifier'] = json_object['source_identifier']
+
+		if type(new_object['source_identifier']) is list:
+			new_object['source_identifier'] = new_object['source_identifier'][0]
+		
+		# identifier
+		# we have two values coming in through the data, but we instead want to use the d-scholarship URL without the interstitial path.
+		# This is stored in the source_identifier, and http://d-scholarship.pitt.edu/id/eprint/10172 should become http://d-scholarship.pitt.edu/10172
+		new_object['identifier'] = re.sub("https?://d-scholarship.pitt.edu/id/eprint/", "", new_object['source_identifier'])
+		new_object['identifier'] = "https://d-scholarship.pitt.edu/" + new_object['identifier']
 
 	# model field
 	# Required.
@@ -466,10 +475,6 @@ def parse_object(json_object):
 		full_language = languages.get_language_by_code(json_object['language'])
 		if full_language:
 			new_object['language'] = full_language
-
-	# identifier field
-	if 'identifier' in json_object.keys():
-		new_object['identifier'] = json_object['identifier']
 
 	# relation field
 	if 'relation' in json_object.keys():

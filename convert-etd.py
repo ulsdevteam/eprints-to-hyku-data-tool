@@ -41,6 +41,7 @@ LOGFILE_MISSING_RIGHTS = "missing_rights.log"
 LOGFILE_FAILED_DOWNLOADS = "failed_downloads.log"
 LOGFILE_JSON_CACHE = "json.log"
 LOGFILE_EMBARGO = "embargo.log"
+LOGFILE_ETDS_MULTIPLE_DOCS = "etds_with_multiple_documents.log"
 
 # Connect to the source server
 ssh_connection = paramiko.SSHClient()
@@ -298,6 +299,9 @@ def parse_object(json_object):
 				new_object['item'].append(file_downloaded)
 	if len(new_object['item']) < 1:
 		new_object['item'] = ""
+
+	if len(new_object['item']) > 1:
+		log_activity_to_file(f"{json_object['source_identifier'][0]} has {len(new_object['item'])} documents", LOGFILE_ETDS_MULTIPLE_DOCS)
 
 	# quick and dirty fix for the JSON import pulling everything into a list
 	for key,value in json_object.items():
@@ -608,6 +612,7 @@ def clear_logs():
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_RIGHTS, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_FAILED_DOWNLOADS, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_EMBARGO, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_ETDS_MULTIPLE_DOCS, 'w').close()
 	
 
 # reset file system - clear out the working directory

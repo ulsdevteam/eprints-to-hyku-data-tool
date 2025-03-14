@@ -221,12 +221,13 @@ def download_file(path, object_id):
 	global file_count
 	global zip_count
 	global sftp_connection
-
+	
 	# parse various parts of the path
 	# who knew we'd have a mix of http and https?
 	file_path = re.sub("http://d-scholarship.pitt.edu/", "", path)
-	file_path = re.sub("https://d-scholarship.pitt.edu/", "", path)
-	
+	file_path = re.sub("https://d-scholarship.pitt.edu/", "", file_path)
+	file_path = re.sub("id/eprint/", "", file_path)
+
 	# eprint_id is used for prepending to the file name on save
 	eprint_id = re.search("^\d+", file_path).group()
 	
@@ -234,12 +235,14 @@ def download_file(path, object_id):
 	eprint_id_path = eprint_id.zfill(6)
 	eprint_id_path = eprint_id_path[:2] + "/" + eprint_id_path[2:]
 	eprint_id_path = eprint_id_path[:5] + "/" + eprint_id_path[5:]
-	
+
 	# file_id is zerofilled in and appended to the file path
 	file_id = re.sub("^\d+\/", "", file_path)
 	
-	# file _name (plus eprint_id) is used for the destination filename
+	# file_name (plus eprint_id) is used for the destination filename
 	file_name = re.sub("^\d+\/", "", file_id)
+
+	#print(f"\tPath = {path}, Object ID = {object_id}, eprint ID = {eprint_id_path}")
 
 	file_id = re.search("^\d+", file_id).group()
 	file_path = "/opt/eprints3/archives/pittir/documents/disk0/00/" + eprint_id_path + "/" + file_id.zfill(2)
@@ -291,12 +294,19 @@ def parse_object(json_object):
 	# item field
 	# Files go here.
 	new_object['item'] = []
-	if 'documents/document/files/file/url' in json_object.keys():
+	if 'documents' in json_object.keys():
+		# sort in place, to avoid creating a O(n^3 log n) operation. This is already bad enough.
+		if len(json_object['documents']) > 1:
+			# sort by position. The lambda is set to look for document.content == "main" to see if
+			# it's the primary item in the list.
+			json_object['documents'].sort(key=lambda document: -1 if document["content"] == "main" else document["position"])
 		# for each element in the array, download the file
-		for url in json_object['documents/document/files/file/url']:
-			file_downloaded = download_file(url, json_object['source_identifier'][0])
-			if file_downloaded:
-				new_object['item'].append(file_downloaded)
+		for document in json_object['documents']:
+			# apparently we will very, very rarely have multiple files per document. Once or twice in the dataset.
+			for file in document['files']:
+				file_downloaded = download_file(file, json_object['source_identifier'][0])
+				if file_downloaded:
+					new_object['item'].append(file_downloaded)
 	if len(new_object['item']) < 1:
 		new_object['item'] = ""
 
@@ -506,21 +516,23 @@ def parse_object(json_object):
 	
 	# if embargo date is after current date, then start processing embargo stuff
 	# check if embargo date exists, first
-	if 'documents/document/date_embargo' in json_object.keys():
+	if 'date_embargo' in json_object.keys():
 
 		# reduce embargo date down to a single value
-		if type(json_object['documents/document/date_embargo']) is list:
-			json_object['documents/document/date_embargo'] = json_object['documents/document/date_embargo'][0]
+		if type(json_object['date_embargo']) is list:
+			json_object['date_embargo'] = json_object['date_embargo'][0]
 
 		# if we have an embargo date in the future
-		if datetime.strptime(json_object['documents/document/date_embargo'], '%Y-%m-%d') > datetime.now():
+		if datetime.strptime(json_object['date_embargo'], '%Y-%m-%d') > datetime.now():
 			# we have a possible embargo!
 			print(f"\t\tEMBARGO: We have a possible embargo for \"{json_object['source_identifier']}\"")
 			
 			# assign embargo release date
-			new_object['embargo_release_date'] = json_object['documents/document/date_embargo']
+			new_object['embargo_release_date'] = json_object['date_embargo']
 
 			# set embargo - this is an or, not an and, so handling this separately and overwriting is fine
+			# metadata visibility in particular does not seem to be a thing we're making use of,
+			# with the exception of dark-archived stuff, which is being handled separately.
 			if 'metadata_visibility' in json_object.keys():
 				if type(json_object['metadata_visibility']) is list:
 					json_object['metadata_visibility'] = json_object['metadata_visibility'][0]
@@ -535,20 +547,22 @@ def parse_object(json_object):
 					new_object['visibility'] = "embargo"
 
 			# Figure out document security
-			if 'documents/document/security' in json_object.keys():
-				if type(json_object['documents/document/security']) is list:
-					json_object['documents/document/security'] = json_object['documents/document/security'][0]
-				if json_object['documents/document/security'] == "public":
-					new_object['visibility_during_embargo'] = "open"
-				if json_object['documents/document/security'] == "validuser":
-					new_object['visibility_during_embargo'] = "authenticated"
-				if json_object['documents/document/security'] == "restricted":
-					new_object['visibility_during_embargo'] = "restricted"
+			# removed due to A. a refactor on MAD's side, and B. apparently we shouldn't be using this data!
+#			if 'documents/document/security' in json_object.keys():
+#				if type(json_object['documents/document/security']) is list:
+#					json_object['documents/document/security'] = json_object['documents/document/security'][0]
+#				if json_object['documents/document/security'] == "public":
+#					new_object['visibility_during_embargo'] = "open"
+#				if json_object['documents/document/security'] == "validuser":
+#					new_object['visibility_during_embargo'] = "authenticated"
+#				if json_object['documents/document/security'] == "restricted":
+#					new_object['visibility_during_embargo'] = "restricted"
+			new_object['visibility_during_embargo'] = "authenticated"
 			
 			# set visibility after embargo - if we have an embargo, this is always set
 			new_object['visibility_after_embargo'] = "open"
 			
-			log_activity_to_file(f"{new_object['source_identifier']} - ORIGINAL: embargo_date {json_object['documents/document/date_embargo']} / metadata_visibility {json_object['metadata_visibility']} / full_text_status {json_object['full_text_status']} / security {json_object['documents/document/security']} || NEW EMBARGO INFO - embargo_release_date {new_object['embargo_release_date']} / visibility {new_object['visibility']} / visibility_during_embargo {new_object['visibility_during_embargo']} / visibility_after_embargo {new_object['visibility_after_embargo']}", LOGFILE_EMBARGO)
+			log_activity_to_file(f"{new_object['source_identifier']} - ORIGINAL: embargo_date {json_object['date_embargo']} / metadata_visibility {json_object['metadata_visibility']} / full_text_status {json_object['full_text_status']} || NEW EMBARGO INFO - embargo_release_date {new_object['embargo_release_date']} / visibility {new_object['visibility']} / visibility_after_embargo {new_object['visibility_after_embargo']}", LOGFILE_EMBARGO)
 
 
 	# quick and dirty fix for the JSON import pulling everything into a list

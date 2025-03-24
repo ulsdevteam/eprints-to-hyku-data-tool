@@ -273,11 +273,17 @@ def download_file(path, object_id):
 # class to parse incoming JSON and output JSON
 # with this edit, we're going to go clean-slate and work through each field
 def parse_object(json_object):
+	# #####################################
 	# regrets
+	# #####################################
+
 	global categories
 	global sftp_connection
 
-	# slightly fewer regrets
+	# #####################################
+	# Still regrets, but slightly fewer regrets
+	# #####################################
+
 	languages = Language_Codes()
 
 	with_errors = False
@@ -288,11 +294,18 @@ def parse_object(json_object):
 	log_activity_to_file(f"Parsing item: {json_object['source_identifier'][0]}", LOGFILE_DEFAULT_DETAILS)
 
 	###################################################
+	###################################################
 	# Admin Fields
 	###################################################
+	###################################################
 
+	# #####################################
 	# item field
-	# Files go here.
+	#
+	# Files are processed here, and sent to a function for detailed processing.
+	# We sort first. If we see content=main that tells us this is the primary
+	# document, so we want to put that in front.
+	# #####################################
 	new_object['item'] = []
 	if 'documents' in json_object.keys():
 		# sort in place, to avoid creating a O(n^3 log n) operation. This is already bad enough.
@@ -339,13 +352,47 @@ def parse_object(json_object):
 	# always the same
 	new_object['model'] = 'Etd'
 
+	# discipline field
+	# Moved to this point in the process because we want to determine discipline prior to
+	# determining our categories list. We're adding discipline to the categories.
+	# However, our discipline output is in plaintext, while our categories are sent as IDs.
+
+	# start building categories here, as well. We'll start with this and add discipline(s) to it
+	# as needed.
+	temp_categories = []
+
+	if 'discipline' in json_object.keys():
+		if type(json_object['discipline']) is list:
+			log_activity_to_file(f"{json_object['source_identifier'][0]} has multiple disciplines: {json_object['discipline']}", LOGFILE_DEFAULT_ERROR)
+			# this should always only be one item, buuuut
+			new_object['discipline'] = [] # initialize as list to enable append
+			for discipline_id in json_object['discipline']:
+				# insert into categories
+				temp_categories.append(discipline_id)
+				# migrate into new discipline list (let's see if we can handle multiple disciplines...)
+				if not categories[discipline_id]['title']:
+					log_activity_to_file("Object \""+discipline_id+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
+				else:
+					new_object['discipline'].append(categories[discipline_id]['title'])
+		else:
+			if not categories[json_object['discipline']]['title']:
+				log_activity_to_file("Object \""+json_object['discipline']+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
+			else:
+				temp_categories.append(json_object['discipline'])
+				new_object['discipline'] = categories[json_object['discipline']]['title']
+
 	# parents field
 	# For us, this will be categories.
-	temp_categories = []
+	# We're outputting category IDs, which will get matched with a human-readable title in H4C.
+	
+	print(f"\t\tNew Parent List (pre-parents): {temp_categories}")
 	if 'parents' in json_object.keys():
 		# grab the complete list of parents from the categories tree
 		if type(json_object['parents']) is list:
+			print(f"\t\tParents (as list): {json_object['parents']}")
 			for parent_id in json_object['parents']:
+				print(f"\t\t\tParent ID:: {parent_id}")
+				print(f"\t\t\tNew Parent List (if parents are a list): {temp_categories}")
 				temp_categories.append(parent_id)
 				if parent_id not in categories.keys():
 					print("Error loading categories! Key: "+json_object['parents'])
@@ -355,9 +402,16 @@ def parse_object(json_object):
 							temp_categories.append(nested_id)
 					else:
 						temp_categories.append(categories[parent_id]['parents'])
-		else:
-			temp_categories += categories[json_object['parents']]['parents']
 
+		# Debug: what is going on here? Reexamine on Monday
+
+		else:
+			print(f"\t\tParents (as something else): {json_object['parents']}")
+			temp_categories = temp_categories+categories[json_object['parents']]['parents']
+	# debugging
+	#print(*temp_categories, sep='\n')
+	print(f"\t\tResulting parents: {temp_categories}")
+	
 	# move temp variable over to object. List and Set nonsense is deduping entries.
 	new_object['parents'] = list(set(temp_categories))
 	new_object['parents'].sort()
@@ -425,20 +479,6 @@ def parse_object(json_object):
 		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_DETAILS)
 		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_MISSING_DEGREE_LEVEL)
 		with_errors = True
-
-	# discipline field
-	if 'discipline' in json_object.keys():
-		if type(json_object['discipline']) is list:
-			# this should always only be one item
-			if not categories[json_object['discipline'][0]]['breadcrumbed_name']:
-				log_activity_to_file("Object \""+json_object['discipline']+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
-			else:
-				new_object['discipline'] = categories[json_object['discipline'][0]]['breadcrumbed_name']
-		else:
-			if not categories[json_object['discipline']]['breadcrumbed_name']:
-				log_activity_to_file("Object \""+json_object['discipline']+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
-			else:
-				new_object['discipline'] = categories[json_object['discipline']]['breadcrumbed_name']
 
 	# grantor field
 	if 'grantor' in json_object.keys():

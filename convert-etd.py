@@ -312,7 +312,9 @@ def parse_object(json_object):
 		if len(json_object['documents']) > 1:
 			# sort by position. The lambda is set to look for document.content == "main" to see if
 			# it's the primary item in the list.
-			json_object['documents'].sort(key=lambda document: -1 if document["content"] == "main" else document["position"])
+			# json_object['documents'].sort(key=lambda document: -1 if document["content"] == "main" else document["position"])
+			# Moving back to simply using position.
+			json_object['documents'].sort(key=lambda document: document["position"])
 		# for each element in the array, download the file
 		for document in json_object['documents']:
 			# apparently we will very, very rarely have multiple files per document. Once or twice in the dataset.
@@ -363,7 +365,7 @@ def parse_object(json_object):
 
 	if 'discipline' in json_object.keys():
 		if type(json_object['discipline']) is list:
-			log_activity_to_file(f"{json_object['source_identifier'][0]} has multiple disciplines: {json_object['discipline']}", LOGFILE_DEFAULT_ERROR)
+			log_activity_to_file(f"{json_object['source_identifier']} has multiple disciplines: {json_object['discipline']}", LOGFILE_DEFAULT_ERROR)
 			# this should always only be one item, buuuut
 			new_object['discipline'] = [] # initialize as list to enable append
 			for discipline_id in json_object['discipline']:
@@ -385,17 +387,14 @@ def parse_object(json_object):
 	# For us, this will be categories.
 	# We're outputting category IDs, which will get matched with a human-readable title in H4C.
 	
-	print(f"\t\tNew Parent List (pre-parents): {temp_categories}")
 	if 'parents' in json_object.keys():
 		# grab the complete list of parents from the categories tree
 		if type(json_object['parents']) is list:
-			print(f"\t\tParents (as list): {json_object['parents']}")
 			for parent_id in json_object['parents']:
-				print(f"\t\t\tParent ID:: {parent_id}")
-				print(f"\t\t\tNew Parent List (if parents are a list): {temp_categories}")
 				temp_categories.append(parent_id)
 				if parent_id not in categories.keys():
 					print("Error loading categories! Key: "+json_object['parents'])
+					log_activity_to_file("Object \""+parent_id+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
 				else:
 					if type(categories[parent_id]['parents']) is list:
 						for nested_id in categories[parent_id]['parents']:
@@ -403,14 +402,8 @@ def parse_object(json_object):
 					else:
 						temp_categories.append(categories[parent_id]['parents'])
 
-		# Debug: what is going on here? Reexamine on Monday
-
 		else:
-			print(f"\t\tParents (as something else): {json_object['parents']}")
 			temp_categories = temp_categories+categories[json_object['parents']]['parents']
-	# debugging
-	#print(*temp_categories, sep='\n')
-	print(f"\t\tResulting parents: {temp_categories}")
 	
 	# move temp variable over to object. List and Set nonsense is deduping entries.
 	new_object['parents'] = list(set(temp_categories))
@@ -433,7 +426,10 @@ def parse_object(json_object):
 	if 'keyword' in json_object.keys():
 		new_object['keyword'] = json_object['keyword']
 	if 'keyword' not in json_object.keys() or not json_object['keyword']:
-		new_object['keyword'] = 'Not Specified'
+		if 'discipline' in new_object.keys():
+			new_object['keyword'] = new_object['discipline']
+		else:
+			new_object['keyword'] = 'Not Specified'
 		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_DEFAULT_ERROR)
 		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_DEFAULT_DETAILS)
 		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: keyword", LOGFILE_MISSING_KEYWORDS)
@@ -485,8 +481,13 @@ def parse_object(json_object):
 		new_object['grantor'] = json_object['grantor']
 
 	# advisor field
+	# now concatenating these 
 	if 'advisor' in json_object.keys():
-		new_object['advisor'] = json_object['advisor']
+		if type(json_object['advisor']) is list:
+			# fancy python list collapse with ", " as delimiter
+			new_object['advisor'] = ", ".join(json_object['advisor'])
+		else:
+			new_object['advisor'] = json_object['advisor']
 
 	# commitee member field
 	# running a function to properly order the committee members

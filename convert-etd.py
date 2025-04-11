@@ -485,7 +485,7 @@ def parse_object(json_object):
 	if 'advisor' in json_object.keys():
 		if type(json_object['advisor']) is list:
 			# fancy python list collapse with ", " as delimiter
-			new_object['advisor'] = ", ".join(json_object['advisor'])
+			new_object['advisor'] = "; ".join(json_object['advisor'])
 		else:
 			new_object['advisor'] = json_object['advisor']
 

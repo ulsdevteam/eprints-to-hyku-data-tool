@@ -308,13 +308,24 @@ def parse_object(json_object):
 	# #####################################
 	new_object['item'] = []
 	if 'documents' in json_object.keys():
-		# sort in place, to avoid creating a O(n^3 log n) operation. This is already bad enough.
 		if len(json_object['documents']) > 1:
+			# enumerating so we can iterate over the list and get the index
+			for index, document in enumerate(json_object['documents']):
+				if 'placement' in document.keys():
+					json_object['documents'][index]['sort_order'] = document['placement']
+				elif 'position' in document.keys():
+					# report an error, and...
+					json_object['documents'][index]['sort_order'] = document['position']
+				else:
+					# report an error
+					pass
 			# sort by position. The lambda is set to look for document.content == "main" to see if
 			# it's the primary item in the list.
+
 			# json_object['documents'].sort(key=lambda document: -1 if document["content"] == "main" else document["position"])
+			
 			# Moving back to simply using position.
-			json_object['documents'].sort(key=lambda document: document["position"])
+			json_object['documents'].sort(key=lambda document: document["sort_order"])
 		# for each element in the array, download the file
 		for document in json_object['documents']:
 			# apparently we will very, very rarely have multiple files per document. Once or twice in the dataset.

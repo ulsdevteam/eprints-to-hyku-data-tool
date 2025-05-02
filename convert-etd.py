@@ -39,6 +39,7 @@ LOGFILE_MISSING_DEGREE_LEVEL = "missing_degree_level.log"
 LOGFILE_MISSING_KEYWORDS = "missing_keywords.log"
 LOGFILE_MISSING_RIGHTS = "missing_rights.log"
 LOGFILE_FAILED_DOWNLOADS = "failed_downloads.log"
+LOGFILE_FILES_NO_PLACEMENT = "files_without_placement_values.log"
 LOGFILE_JSON_CACHE = "json.log"
 LOGFILE_EMBARGO = "embargo.log"
 LOGFILE_ETDS_MULTIPLE_DOCS = "etds_with_multiple_documents.log"
@@ -315,17 +316,18 @@ def parse_object(json_object):
 					json_object['documents'][index]['sort_order'] = document['placement']
 				elif 'position' in document.keys():
 					# report an error, and...
+					log_activity_to_file(f"{json_object['source_identifier'][0]}: document {json_object['documents'][index][files][0]} does not have a placement field.", LOGFILE_FILES_NO_PLACEMENT)
 					json_object['documents'][index]['sort_order'] = document['position']
 				else:
 					# report an error
-					pass
+					log_activity_to_file(f"{json_object['source_identifier'][0]}: document {json_object['documents'][index][files][0]} does not have a placement field or a position field.", LOGFILE_FILES_NO_PLACEMENT)
 			# sort by position. The lambda is set to look for document.content == "main" to see if
 			# it's the primary item in the list.
-
-			# json_object['documents'].sort(key=lambda document: -1 if document["content"] == "main" else document["position"])
-			
 			# Moving back to simply using position.
 			json_object['documents'].sort(key=lambda document: document["sort_order"])
+
+			# json_object['documents'].sort(key=lambda document: -1 if document["content"] == "main" else document["position"])
+
 		# for each element in the array, download the file
 		for document in json_object['documents']:
 			# apparently we will very, very rarely have multiple files per document. Once or twice in the dataset.
@@ -677,9 +679,10 @@ def clear_logs():
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_JSON_CACHE, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_MISSING_RIGHTS, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_FAILED_DOWNLOADS, 'w').close()
+	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_FILES_NO_PLACEMENT, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_EMBARGO, 'w').close()
 	open(LOGFILE_DIRECTORY+DIRECTORY_SEPARATOR+LOGFILE_ETDS_MULTIPLE_DOCS, 'w').close()
-	
+
 
 # reset file system - clear out the working directory
 def rebuild_working_dir():

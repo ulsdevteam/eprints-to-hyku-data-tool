@@ -409,7 +409,7 @@ def parse_object(json_object):
 			for parent_id in json_object['parents']:
 				temp_categories.append(parent_id)
 				if parent_id not in categories.keys():
-					print("Error loading categories! Key: "+json_object['parents'])
+					print("Error loading categories! Key: "+str(json_object['parents']))
 					log_activity_to_file("Object \""+parent_id+"\" does not have a match in our categories", LOGFILE_DEFAULT_ERROR)
 				else:
 					if type(categories[parent_id]['parents']) is list:
@@ -419,6 +419,7 @@ def parse_object(json_object):
 						temp_categories.append(categories[parent_id]['parents'])
 
 		else:
+			temp_categories.append(json_object['parents'])
 			temp_categories = temp_categories+categories[json_object['parents']]['parents']
 	
 	# move temp variable over to object. List and Set nonsense is deduping entries.
@@ -588,6 +589,11 @@ def parse_object(json_object):
 		# reduce embargo date down to a single value
 		if type(json_object['date_embargo']) is list:
 			json_object['date_embargo'] = json_object['date_embargo'][0]
+		
+		# in the one case we have an embargo date that's just a month
+		dayless_date_format = re.compile(r"^\d{4}-\d{2}$")
+		if dayless_date_format.match(json_object['date_embargo']) is not None:
+			json_object['date_embargo']+="-01"
 
 		# if we have an embargo date in the future
 		if datetime.strptime(json_object['date_embargo'], '%Y-%m-%d') > datetime.now():

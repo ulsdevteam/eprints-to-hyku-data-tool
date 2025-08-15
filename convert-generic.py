@@ -335,6 +335,11 @@ def parse_object(json_object):
 		for document in json_object['documents']:
 			# apparently we will very, very rarely have multiple files per document. Once or twice in the dataset.
 			for file in document['files']:
+				# filter out licence.txt (sic) files (yes, the files are all spelled 'licence')
+				# if the end of the file string is licence.txt, then skip this file
+				if re.search("licence.txt$", file) :
+					continue
+				
 				file_downloaded = download_file(file, json_object['source_identifier'][0])
 				if file_downloaded:
 					new_object['item'].append(file_downloaded)

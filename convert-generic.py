@@ -486,50 +486,6 @@ def parse_object(json_object):
 	if 'type' in json_object.keys():
 		new_object['type'] = json_object['type']
 
-	# degree field
-	# Required
-	if 'degree' in json_object.keys():
-		new_object['degree_name'] = json_object.pop('degree')
-	if 'degree_name' not in new_object.keys() or not new_object['degree_name']:
-		new_object['degree_name'] = "Not Specified"
-		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_ERROR)
-		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_DEFAULT_DETAILS)
-		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_name", LOGFILE_MISSING_DEGREE_NAME)
-		with_errors = True
-
-	# level field
-	# Required
-	if 'level' in json_object.keys():
-		new_object['degree_level'] = json_object.pop('level')
-	if 'degree_level' not in new_object.keys() or not new_object['degree_level']:
-		new_object['degree_level'] = "Not Specified"
-		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_ERROR)
-		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_DEFAULT_DETAILS)
-		log_activity_to_file("Object \""+new_object['source_identifier']+"\" is missing required field: degree_level", LOGFILE_MISSING_DEGREE_LEVEL)
-		with_errors = True
-
-	# grantor field
-	if 'grantor' in json_object.keys():
-		new_object['grantor'] = json_object['grantor']
-
-	# advisor field
-	# now concatenating these 
-	if 'advisor' in json_object.keys():
-		if type(json_object['advisor']) is list:
-			# fancy python list collapse with ", " as delimiter
-			new_object['advisor'] = "; ".join(json_object['advisor'])
-		else:
-			new_object['advisor'] = json_object['advisor']
-
-	# commitee member field
-	# running a function to properly order the committee members
-	if 'committee_member' in json_object.keys():
-		new_object['committee_member'] = parse_committee(json_object['committee_member'])
-
-	# department field
-	if 'department' in json_object.keys():
-		new_object['department'] = json_object['department']
-
 	# format field
 	if 'format' in json_object.keys():
 		new_object['format'] = json_object['format']
@@ -550,6 +506,11 @@ def parse_object(json_object):
 	if 'publisher' in json_object.keys():
 		new_object['publisher'] = json_object['publisher']
 
+	# related_url field
+	# This could be multiple entries
+	if 'related_url' in json_object.keys():
+		new_object['related_url'] = json_object['related_url']
+
 	# subject field
 	if 'subject' in json_object.keys():
 		new_object['subject'] = json_object['subject']
@@ -569,8 +530,12 @@ def parse_object(json_object):
 		new_object['relation'] = json_object['relation']
 
 	# source field
+	# for now, we're going to be pulling Hyku source from Eprints source,
+	# unless we have something in the publication field.
 	if 'source' in json_object.keys():
 		new_object['source'] = json_object['source']
+	if 'publication' in json_object.keys():
+		new_object['source'] = json_object['publication']
 
 	# abstract field
 	if 'abstract' in json_object.keys():

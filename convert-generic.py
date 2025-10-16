@@ -491,8 +491,8 @@ def parse_object(json_object):
 		new_object['format'] = json_object['format']
 
 	# date field
-	if 'date' in json_object.keys():
-		new_object['date'] = json_object['date']
+	if 'date_created' in json_object.keys():
+		new_object['date'] = json_object['date_created']
 
 	# contributor field
 	if 'contributor' in json_object.keys():
@@ -536,6 +536,8 @@ def parse_object(json_object):
 		new_object['source'] = json_object['source']
 	if 'publication' in json_object.keys():
 		new_object['source'] = json_object['publication']
+	if 'book_title' in json_object.keys():
+		new_object['source'] = json_object['book_title']
 
 	# abstract field
 	if 'abstract' in json_object.keys():

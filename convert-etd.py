@@ -1,5 +1,5 @@
 import argparse, csv, json, math, os, re, sys
-from datetime import datetime # the datetime people are crazy
+from datetime import datetime, timedelta # the datetime people are crazy
 import shutil # for zipping
 from pytz import timezone
 from pathlib import Path
@@ -25,6 +25,9 @@ BATCH_DATE_FORMAT = "%Y-%m-%d %H-%M-%S"
 EASTERN_TIMEZONE = timezone('US/Eastern')
 BATCH_START_TIME = datetime.now(EASTERN_TIMEZONE)
 BATCH_NAME = BATCH_START_TIME.strftime(BATCH_DATE_FORMAT)
+
+EMBARGO_WINDOW = 30	# the number of days to add to the current date when determining
+			# the date after which embargos will be respected
 
 DOCUMENTS_FILENAME = "files.csv"
 DOCUMENTS_METADATA_HEADERS = ['item', 'source_identifier', 'model', 'parents', 'title', 'creator', 'keyword', 'rights', 'license', 'type', 'degree', 'level', 'discipline', 'grantor', 'advisor', 'commitee member', 'department', 'format', 'date', 'contributor', 'description', 'publisher', 'subject', 'language', 'identifier', 'relation', 'source', 'abstract', 'admin_note']
@@ -577,7 +580,7 @@ def parse_object(json_object):
 			json_object['date_embargo'] = json_object['date_embargo'][0]
 
 		# if we have an embargo date in the future
-		if datetime.strptime(json_object['date_embargo'], '%Y-%m-%d') > datetime.now():
+		if datetime.strptime(json_object['date_embargo'], '%Y-%m-%d') > (datetime.now() + timedelta(days=EMBARGO_WINDOW)):
 			# we have a possible embargo!
 			print(f"\t\tEMBARGO: We have a possible embargo for \"{json_object['source_identifier']}\"")
 			

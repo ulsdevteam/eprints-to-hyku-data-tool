@@ -1,5 +1,5 @@
 import argparse, csv, json, math, os, re, sys
-from datetime import datetime # the datetime people are crazy
+from datetime import datetime, timedelta # the datetime people are crazy
 import shutil # for zipping
 from pytz import timezone
 from pathlib import Path
@@ -25,6 +25,9 @@ BATCH_DATE_FORMAT = "%Y-%m-%d %H-%M-%S"
 EASTERN_TIMEZONE = timezone('US/Eastern')
 BATCH_START_TIME = datetime.now(EASTERN_TIMEZONE)
 BATCH_NAME = BATCH_START_TIME.strftime(BATCH_DATE_FORMAT)
+
+EMBARGO_WINDOW = 30	# the number of days to add to the current date when determining
+			# the date after which embargos will be respected
 
 DOCUMENTS_FILENAME = "files.csv"
 DOCUMENTS_METADATA_HEADERS = ['item', 'source_identifier', 'model', 'parents', 'title', 'creator', 'keyword', 'rights', 'license', 'type', 'degree', 'level', 'discipline', 'grantor', 'advisor', 'commitee member', 'department', 'format', 'date', 'contributor', 'description', 'publisher', 'subject', 'language', 'identifier', 'relation', 'source', 'abstract', 'admin_note']
@@ -273,7 +276,7 @@ def download_file(path, object_id):
 
 # class to parse incoming JSON and output JSON
 # with this edit, we're going to go clean-slate and work through each field
-def parse_object(json_object):
+def parse_object(json_object, downloadFiles):
 	# #####################################
 	# regrets
 	# #####################################
@@ -305,10 +308,11 @@ def parse_object(json_object):
 	#
 	# Files are processed here, and sent to a function for detailed processing.
 	# We sort first. If we see content=main that tells us this is the primary
-	# document, so we want to put that in front.
+	# document, so we want to put that in front. The argument downloadFiles
+	# should be a boolean value telling us whether to do this work or not.
 	# #####################################
 	new_object['item'] = []
-	if 'documents' in json_object.keys():
+	if 'documents' in json_object.keys() and downloadFiles is True:
 		if len(json_object['documents']) > 1:
 			# enumerating so we can iterate over the list and get the index
 			for index, document in enumerate(json_object['documents']):
@@ -568,7 +572,7 @@ def parse_object(json_object):
 			json_object['date_embargo']+="-01"
 
 		# if we have an embargo date in the future
-		if datetime.strptime(json_object['date_embargo'], '%Y-%m-%d') > datetime.now():
+		if datetime.strptime(json_object['date_embargo'], '%Y-%m-%d') > (datetime.now() + timedelta(days=EMBARGO_WINDOW)):
 			# we have a possible embargo!
 			print(f"\t\tEMBARGO: We have a possible embargo for \"{json_object['source_identifier']}\"")
 			
@@ -651,6 +655,7 @@ def parse_arguments():
 	parser.add_argument('infile', metavar='infile', type=str, help='the path to a json-formatted file that will be parsed.')
 	parser.add_argument('outfile', metavar='outfile', type=str, help='a filename fragment (no extension) that will store the parsed json. This data may be broken up into multiple files. Output will be formatted as [outfile].[index].json .')
 	parser.add_argument('max_size', metavar='maxSize', type=int, help='The maximum number of entries per output file.')
+	parser.add_argument('--download_files', metavar='downloadFiles', nargs="?", type=str, help='Do you want to download the files associated with each record? True/False', const=True, default=True)
 
 	return parser.parse_args()
 
@@ -686,6 +691,14 @@ def rebuild_working_dir():
 
 def main():
 	args = parse_arguments()
+	
+	if args.download_files.casefold() == "False".casefold():
+		downloadFiles = False
+	else:
+		downloadFiles = True
+		
+	print(f"Download Files: {downloadFiles}")
+	exit
 
 	# Clear out the logs from the last run.
 	clear_logs()
@@ -727,7 +740,7 @@ def main():
 		# increment our count of items for this file
 		local_index += 1
 		# parse the object as needed
-		[new_content,with_errors] = parse_object(content)
+		[new_content,with_errors] = parse_object(content, downloadFiles)
 
 		if with_errors:
 			files_with_errors += 1
